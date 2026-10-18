@@ -202,8 +202,10 @@ class StyleFor:
             target_collector.collect_anchor(computed['anchor'])
 
     def add_page_declarations(self, page_type):
+        """Add declarations matching ``page_type``, return its pseudo types."""
         # TODO: use real layer order.
         layer_order = None
+        pseudo_types = {}
         for sheet, origin, sheet_specificity in self._sheets:
             for _rule, selector_list, declarations in sheet.page_rules:
                 for selector in selector_list:
@@ -212,12 +214,14 @@ class StyleFor:
                         specificity = sheet_specificity or specificity
                         style = self._cascaded_styles.setdefault(
                             (page_type, pseudo_type), {})
+                        pseudo_types[pseudo_type] = None
                         for name, values, importance in declarations:
                             precedence = declaration_precedence(origin, importance)
                             weight = (precedence, layer_order, specificity)
                             old_weight = style.get(name, (None, None))[1]
                             if old_weight is None or old_weight <= weight:
                                 style[name] = values, weight
+        return tuple(pseudo_types)
 
     def get_cascaded_styles(self):
         return self._cascaded_styles

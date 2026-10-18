@@ -866,7 +866,7 @@ def make_page(context, root_box, page_type, resume_at, page_number,
 
 def set_page_type_computed_styles(page_type, html, style_for):
     """Set style for page types and pseudo-types matching ``page_type``."""
-    style_for.add_page_declarations(page_type)
+    pseudo_types = style_for.add_page_declarations(page_type)
 
     # Apply style for page
     style_for.set_computed_styles(
@@ -877,12 +877,12 @@ def set_page_type_computed_styles(page_type, html, style_for):
         base_url=html.base_url)
 
     # Apply style for page pseudo-elements (margin boxes)
-    for element, pseudo_type in style_for.get_cascaded_styles():
-        if pseudo_type and element == page_type:
+    for pseudo_type in pseudo_types:
+        if pseudo_type:
             style_for.set_computed_styles(
-                element, pseudo_type=pseudo_type,
+                page_type, pseudo_type=pseudo_type,
                 # The pseudo-element inherits from the element.
-                root=html.etree_element, parent=element,
+                root=html.etree_element, parent=page_type,
                 base_url=html.base_url)
 
 
