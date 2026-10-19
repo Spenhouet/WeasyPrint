@@ -1,6 +1,8 @@
 """PDF generation management."""
 
+from concurrent.futures import ThreadPoolExecutor
 from importlib.resources import files
+from os import cpu_count
 
 import pydyf
 from tinycss2.color5 import D50, D65
@@ -80,7 +82,11 @@ def _use_references(pdf, resources, images, color_profiles):
 
             image = image_data['image']
             dpi_ratio = max(image_data['dpi_ratios'])
-            x_object = image.get_x_object(image_data['interpolate'], dpi_ratio)
+            future = image_data.get('future')
+            if future and dpi_ratio == 1:
+                x_object = future.result()
+            else:
+                x_object = image.get_x_object(image_data['interpolate'], dpi_ratio)
             image_data['x_object'] = x_object
 
         pdf.add_object(x_object)
@@ -123,6 +129,27 @@ def generate_pdf(document, target, zoom, **options):
 
     PROGRESS_LOGGER.info('Step 6 - Creating PDF')
 
+    pdf = pydyf.PDF()
+    images = Images(ThreadPoolExecutor(min(4, cpu_count() or 1)))
+    try:
+        return _generate_pdf(document, pdf, images, scale, options)
+    finally:
+        images.pool.shutdown(cancel_futures=True)
+
+
+class Images(dict):
+    """Images of a PDF, with a pool of threads that build their streams.
+
+    Decoding and encoding images is mostly done by Pillow without holding the
+    GIL, so the streams are built in threads while the pages are drawn.
+
+    """
+    def __init__(self, pool):
+        super().__init__()
+        self.pool = pool
+
+
+def _generate_pdf(document, pdf, images, scale, options):
     compress = not options['uncompressed_pdf']
 
     # Set properties according to PDF variants
@@ -133,8 +160,6 @@ def generate_pdf(document, target, zoom, **options):
         if 'pdf_tags' in properties:
             pdf_tags = properties['pdf_tags']
 
-    pdf = pydyf.PDF()
-    images = {}
     color_space = pydyf.Dictionary({
         'lab-d50': pydyf.Array(('/Lab', pydyf.Dictionary({
             'WhitePoint': pydyf.Array(D50),

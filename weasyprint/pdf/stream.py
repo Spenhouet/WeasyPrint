@@ -218,15 +218,19 @@ class Stream(pydyf.Stream):
         self._resources['XObject'][image_name] = None  # Set by write_pdf
         if image_name in self._images:
             # Reuse image already stored in document
-            self._images[image_name]['dpi_ratios'].add(ratio)
-            return image_name
-
-        self._images[image_name] = {
-            'image': image,
-            'interpolate': interpolate,
-            'dpi_ratios': {ratio},
-            'x_object': None,  # Set by write_pdf
-        }
+            image_data = self._images[image_name]
+            image_data['dpi_ratios'].add(ratio)
+        else:
+            image_data = self._images[image_name] = {
+                'image': image,
+                'interpolate': interpolate,
+                'dpi_ratios': {ratio},
+                'x_object': None,  # Set by write_pdf
+            }
+        pool = getattr(self._images, 'pool', None)
+        if ratio == 1 and pool and 'future' not in image_data:
+            # Start building the image stream while the pages are drawn.
+            image_data['future'] = pool.submit(image.get_x_object, interpolate, 1)
         return image_name
 
     def add_pattern(self, x, y, width, height, repeat_width, repeat_height, matrix):
