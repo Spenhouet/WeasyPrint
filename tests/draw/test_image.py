@@ -673,3 +673,23 @@ def test_image_after_alpha(assert_pixels, filename, border):
       <div style="border: %s"></div>
       <div style="background: url(%s)"></div>
     ''' % (border, filename))
+
+
+@assert_no_logs
+def test_svg_image_reused(assert_pixels):
+    # The same SVG image drawn at the same size on 3 pages: the first one is
+    # drawn in place, the next ones paint one form XObject.
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'>"
+        "<rect width='4' height='4' fill='%2300f'/>"
+        "<rect width='1' height='1' fill='%23f00'/></svg>")
+    image = f'<img src="data:image/svg+xml,{svg}">'
+    html = '''
+      <style>
+        @page { size: 8px }
+        body { margin: 0 0 0 2px; font-size: 0 }
+        img { display: block; margin-top: 2px; break-after: page }
+      </style>''' + image * 3
+    assert_pixels(centered_image * 3, html)
+    pdf = FakeHTML(string=html).write_pdf()
+    assert pdf.count(b'/Subtype /Form') == 1

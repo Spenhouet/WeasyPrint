@@ -7,6 +7,7 @@ from hashlib import md5
 from io import BytesIO
 from itertools import cycle
 from pathlib import Path
+from weakref import WeakValueDictionary
 from xml.etree import ElementTree
 
 import pydyf
@@ -258,6 +259,14 @@ class SVGImage:
         self._base_url = base_url
         self._url_fetcher = url_fetcher
         self._context = context
+        # Form XObjects of this image drawn at a given size, see draw().
+        self._forms = WeakValueDictionary()
+        self._drawn = set()
+        # Raster images depend on the place where they are drawn, and text in
+        # a form is extracted in another order: draw these images in place.
+        self._reusable = not any(
+            element.tag.rpartition('}')[2] in ('image', 'text', 'foreignObject')
+            for element in tree.iter() if isinstance(element.tag, str))
 
     def get_intrinsic_size(self, image_resolution, font_size):
         width, height = self._svg.get_intrinsic_size(font_size)
@@ -278,6 +287,21 @@ class SVGImage:
         return width, height, ratio
 
     def draw(self, stream, concrete_width, concrete_height, _style):
+        # An image drawn again at the same size, like a logo in a page header,
+        # is drawn once in a form XObject that is then painted at each use.
+        key = (id(stream._resources), concrete_width, concrete_height)
+        if self._reusable and stream._tags is None and key in self._drawn:
+            if (form := self._forms.get(key)) is None:
+                form = stream.add_group(-1e4, -1e4, 2e4, 2e4)
+                del form.extra['Group']
+                self._draw(form, concrete_width, concrete_height)
+                self._forms[key] = form
+            stream.draw_x_object(form.id)
+        else:
+            self._drawn.add(key)
+            self._draw(stream, concrete_width, concrete_height)
+
+    def _draw(self, stream, concrete_width, concrete_height):
         try:
             self._svg.draw(
                 stream, concrete_width, concrete_height, self._base_url,
